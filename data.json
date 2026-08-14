@@ -1,16 +1,16 @@
 {
   "latest": {
-    "date": "2026-08-13",
-    "ivc_pct": 52.637075718015666,
+    "date": "2026-08-14",
+    "ivc_pct": 73.2776617954071,
     "regime_ivc": "NEUTRAL",
-    "vix_pct": 28.511749347258487,
+    "vix_pct": 28.49686847599165,
     "regime_vix": "NEUTRAL",
-    "ps_pct": 24.595300261096607,
-    "regime_ps": "NEUTRAL",
-    "sqi_pct": 37.367624020887725,
+    "ps_pct": 17.53653444676409,
+    "regime_ps": "ADVERSO",
+    "sqi_pct": 45.52139874739039,
     "regime_sqi": "NEUTRAL",
-    "vix_raw": 0.1491,
-    "ivc_raw": 0.017750000000000016
+    "vix_raw": 0.1499,
+    "ivc_raw": 0.017850000000000005
   },
   "series": [
     {
@@ -15096,9 +15096,17 @@
     {
       "t": "2026-08-13",
       "ivc": 52.64,
-      "vix": 28.51,
+      "vix": 30.03,
       "ps": 24.6,
       "sqi": 37.37,
+      "spx": 7780.5
+    },
+    {
+      "t": "2026-08-14",
+      "ivc": 73.28,
+      "vix": 28.5,
+      "ps": 17.54,
+      "sqi": 45.52,
       "spx": null
     }
   ],
@@ -15108,8 +15116,8 @@
     "n_days": 1223,
     "date_min": "2019-02-20",
     "date_max": "2025-10-01",
-    "chart_date_max": "2026-08-13",
-    "chart_n_days": 1886
+    "chart_date_max": "2026-08-14",
+    "chart_n_days": 1887
   },
   "baseline": {
     "n_trades": 1629,
