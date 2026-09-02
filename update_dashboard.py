@@ -20,6 +20,7 @@ VIX_PATH = r'C:/Users/Administrator/Desktop/FINAL DATA/VIX_CLOSE_HISTORICAL_PRIC
 PS_PATH  = r'C:/Users/Administrator/Desktop/BULK OPTIONSTRAT/ESTRATEGIAS/Skew/SKEW_PUT_ENRICHED.csv'
 # Parquets 30MIN crudos (solo lectura) para sanar dias glitch r=0 (ver stt_heal.py)
 PARQUET_DIR = r'C:/Users/Administrator/Desktop/FINAL DATA/HIST AND STREAMING DATA/UPDATED HISTORICAL DAYS PARQUET'
+PS_REF_NPZ  = os.path.join(OUTDIR, 'PS_SKEW_REF_FROZEN.npz')  # referencia FIJA de PUT SKEW (bloque [3])
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stt_heal
 
@@ -42,38 +43,75 @@ def smooth3(s):
     return pd.Series(s).rolling(3, min_periods=1).median().values
 
 print('[1] Loading STT ...', flush=True)
-df = pd.read_csv(PATH, usecols=['dia','SPX','IV_CONVEXITY']+pnl_cols, low_memory=False)
+# IV_CONVEXITY (trade-specific) ya NO se lee aqui: vive en la madre y en el LIVE.
+df = pd.read_csv(PATH, usecols=['dia','SPX']+pnl_cols, low_memory=False)
 df['dia'] = pd.to_datetime(df['dia']).dt.normalize()
 df['year'] = df['dia'].dt.year
 df = df.sort_values('dia').reset_index(drop=True)
 
-# IV_CONV expanding (sobre dias-trade STT)
-df['ivc_pct'] = expanding_pct(df['IV_CONVEXITY'].values)
-
-# EJE VOL = ATM-IV (iv_50d @dte160), migrado desde VIX en 2026-05.
-# NOTA: por estabilidad del contrato data.json<->index.html, las claves JSON
-# mantienen el nombre legacy 'vix_*' pero CONTIENEN el ATM-IV. Todas las
-# etiquetas visibles dicen "IV ATM". (r +0.45 vs VIX +0.39; tenor casado al trade.)
-print('[2] ATM-IV (iv_50d @dte160) expanding SUAVIZADO 3d [eje vol, ex-VIX] ...', flush=True)
-psf = pd.read_csv(PS_PATH, usecols=['trade_date','dte_target','skew_25d_vs50','iv_50d'])
+# ============================================================================
+# CONFIG 2026-09-02 (auditoria @AuditoriaManumb + @APR de ventanas). 3 cambios medidos:
+#  1) IV_CONV pasa a la version GENERICA de mercado (iv_5d/iv_15d/iv_30d @dte160)
+#     TAMBIEN en las tablas. Antes las tablas usaban la trade-specific
+#     (iv_k1+iv_k3)/2-iv_k2 y el panel el proxy: el lector veia una LUZ y una
+#     ESTADISTICA de variables distintas (Jaccard 0.68 en el umbral P80, y el
+#     edge desplegable era +1.40 frente al +1.83 publicado).
+#     La trade-specific NO se pierde: vive donde SI hay trade -- madre
+#     STT_CLASSIC_V9_MERGED_T0_mediana.csv (col IV_CONVEXITY, 100% cobertura) y
+#     el LIVE "STT V1 LIVE ... SQI V2" (compute_sqi_v2_live -> SQI_V2_PCTLE).
+#     Medido: el generico rinde MEJOR en percentil que en raw
+#     (bootstrap-by-day raw - pct = -0.0556, CI95 [-0.1015, -0.0094], SIG).
+#  2) PUT SKEW pasa a REFERENCIA FIJA congelada (searchsorted) en vez de percentil
+#     expanding. Es la convencion LIVE del proyecto y es una transformacion
+#     MONOTONA del raw, asi que hereda su estadistica exacta: el @APR mostro que
+#     el raw BATE al expanding (+0.0631, CI95 [+0.0418, +0.0864], SIG) y que el
+#     expanding RESTA (partial(exp|raw) = -0.128; k-fold 5/5 vs 4/5).
+#  3) NO se cablean ventanas rolling (504/252/126): las 12 comparaciones
+#     rolling-vs-expanding pierden, 11 de ellas de forma significativa.
+# Ver memory/analisis_predictabilidad_robustez_ventanas_stt_20260902.md
+# ============================================================================
+print('[2] Senales de mercado @dte160 (IV ATM, IV_CONV generico, PUT SKEW) ...', flush=True)
+psf = pd.read_csv(PS_PATH, usecols=['trade_date','dte_target','skew_25d_vs50',
+                                    'iv_5d','iv_15d','iv_30d','iv_50d'])
 psf['trade_date'] = pd.to_datetime(psf['trade_date']).dt.normalize()
 psf160 = psf[psf['dte_target']==160].copy().sort_values('trade_date').reset_index(drop=True)
-# Suavizado 3d del RAW antes de percentilizar (mata outliers de 1 dia en la fuente).
+
+# --- EJE VOL = ATM-IV (iv_50d). Clave JSON legacy 'vix_*' por contrato con index.html.
 atm = psf160[['trade_date','iv_50d']].rename(columns={'trade_date':'dia','iv_50d':'VIX_Close'}).dropna().sort_values('dia').reset_index(drop=True)
-atm['vix_pct'] = expanding_pct(smooth3(atm['VIX_Close'].values))   # vix_pct (legacy key) = ATM-IV pct (suavizado)
+atm['vix_pct'] = expanding_pct(smooth3(atm['VIX_Close'].values))
 df = df.merge(atm[['dia','VIX_Close','vix_pct']], on='dia', how='left')
 
-# PUT SKEW NIVEL: recalculo LOCAL del raw skew_25d_vs50 @dte160 suavizado 3d (homogeneo con IV ATM).
-# Antes se usaba la columna pre-calc skew_25d_vs50_pct_expanding; ahora se percentiliza el raw
-# suavizado para homogeneizar metodo y matar outliers (validado APR: corr 1.0 en dias normales).
-print('[3] PUT SKEW NIVEL @ dte160 (raw suavizado 3d, recalc local) ...', flush=True)
-ps = psf160[['trade_date','skew_25d_vs50']].rename(columns={'trade_date':'dia'}).dropna().sort_values('dia').reset_index(drop=True)
-ps['ps_pct'] = expanding_pct(smooth3(ps['skew_25d_vs50'].values))
-df = df.merge(ps[['dia','ps_pct']], on='dia', how='left')
+# --- IV_CONV GENERICO: el MISMO calculo que el panel (una variable, una definicion)
+gen = psf160[['trade_date','iv_5d','iv_15d','iv_30d']].rename(columns={'trade_date':'dia'}).copy()
+gen['ivc_gen_raw'] = smooth3(((gen['iv_5d']+gen['iv_30d'])/2 - gen['iv_15d']).values)
+gen = gen.dropna(subset=['ivc_gen_raw']).sort_values('dia').reset_index(drop=True)
+gen['ivc_pct'] = expanding_pct(gen['ivc_gen_raw'].values)
+df = df.merge(gen[['dia','ivc_gen_raw','ivc_pct']], on='dia', how='left')
 
-# Universo canonico: las 3 senales presentes (warmup IVC descontado)
-sub = df.dropna(subset=['ivc_pct','vix_pct','ps_pct','IV_CONVEXITY']).reset_index(drop=True)
-print(f'    N={len(sub)}  dias={sub["dia"].dt.date.nunique()}  ps_cov={df["ps_pct"].notna().mean()*100:.1f}%')
+# --- PUT SKEW NIVEL: referencia FIJA congelada (searchsorted), NO expanding.
+print('[3] PUT SKEW @dte160 contra referencia FIJA congelada ...', flush=True)
+ps = psf160[['trade_date','skew_25d_vs50']].rename(columns={'trade_date':'dia'}).dropna().sort_values('dia').reset_index(drop=True)
+ps['ps_raw'] = smooth3(ps['skew_25d_vs50'].values)
+if os.path.isfile(PS_REF_NPZ):
+    _z = np.load(PS_REF_NPZ, allow_pickle=True)
+    PS_REF = _z['ref_sorted']
+    print('    referencia FIJA cargada: n=%d (congelada el %s)' % (len(PS_REF), str(_z['built'])))
+else:
+    PS_REF = np.sort(ps['ps_raw'].dropna().values)
+    np.savez(PS_REF_NPZ, ref_sorted=PS_REF, built=str(ps['dia'].max().date()),
+             note='PUT SKEW skew_25d_vs50 @dte160 suavizado 3d. Referencia CONGELADA para searchsorted.')
+    print('    referencia FIJA creada: n=%d (hasta %s)' % (len(PS_REF), ps['dia'].max().date()))
+ps['ps_pct'] = np.searchsorted(PS_REF, ps['ps_raw'].values, side='right') / float(len(PS_REF)) * 100.0
+ps.loc[ps['ps_raw'].isna(), 'ps_pct'] = np.nan
+PS_THR = dict((k, float(np.percentile(PS_REF, k))) for k in (10, 20, 30, 70, 80, 90))
+print('    umbrales RAW equivalentes: P20=%.5f  P80=%.5f  P90=%.5f'
+      % (PS_THR[20], PS_THR[80], PS_THR[90]))
+df = df.merge(ps[['dia','ps_raw','ps_pct']], on='dia', how='left')
+
+# Universo canonico: las 3 senales presentes
+sub = df.dropna(subset=['ivc_pct','vix_pct','ps_pct']).reset_index(drop=True)
+print('    N=%d  dias=%d  ps_cov=%.1f%%' % (len(sub), sub['dia'].dt.date.nunique(),
+                                            df['ps_pct'].notna().mean()*100))
 
 RAW_AVG_MEAN = sub[pnl_cols].mean().mean()
 RAW_AVG_MED  = sub[pnl_cols].median().mean()
@@ -89,7 +127,10 @@ def cohort(d, label):
     if len(d)==0: return None
     pos=d['PnL_d030'][d['PnL_d030']>0].sum(); neg=abs(d['PnL_d030'][d['PnL_d030']<0].sum())
     pf=pos/neg if neg>0 else float('inf')
-    return {'label':label,'n':int(len(d)),'days':int(d['dia'].dt.date.nunique()),
+    # by_year: reparto por anio de la cohorte. Sin esto, un N=27 con 26 trades de 2020
+    # es indistinguible de un N=27 repartido -> el lector no puede juzgar la cohorte.
+    by_year={str(int(y)):int(c) for y,c in d['dia'].dt.year.value_counts().sort_index().items()}
+    return {'label':label,'n':int(len(d)),'days':int(d['dia'].dt.date.nunique()),'by_year':by_year,
         'd20_mean':round(d['PnL_d020'].mean(),2),'d20_med':round(d['PnL_d020'].median(),2),
         'd30_mean':round(d['PnL_d030'].mean(),2),'d30_med':round(d['PnL_d030'].median(),2),
         'avg_mean':round(d[pnl_cols].mean().mean(),2),'avg_med':round(d[pnl_cols].median().mean(),2),
@@ -99,7 +140,7 @@ def cohort(d, label):
 # ---------- daily series + latest ----------
 daily = sub.groupby('dia').agg(ivc_pct=('ivc_pct','mean'), vix_pct=('vix_pct','mean'),
                                ps_pct=('ps_pct','mean'), vix=('VIX_Close','mean'),
-                               iv_conv_raw=('IV_CONVEXITY','mean')).reset_index().sort_values('dia')
+                               iv_conv_raw=('ivc_gen_raw','mean')).reset_index().sort_values('dia')
 latest = daily.iloc[-1]
 
 data = {'latest': {'date': latest['dia'].strftime('%Y-%m-%d'),
@@ -110,7 +151,7 @@ data = {'latest': {'date': latest['dia'].strftime('%Y-%m-%d'),
         'series': [{'t': r['dia'].strftime('%Y-%m-%d'),
                     'ivc': round(float(r['ivc_pct']),2), 'vix': round(float(r['vix_pct']),2),
                     'ps': round(float(r['ps_pct']),2), 'vraw': round(float(r['vix']),2)} for _,r in daily.iterrows()],
-        'meta': {'dataset':'STT_CLASSIC_V9_MERGED_T0_mediana','n_trades':int(len(sub)),
+        'meta': {'dataset':'STT_CLASSIC_V9_MERGED_T0_mediana','ivc_source':'generico de mercado (iv_5d+iv_30d)/2-iv_15d @dte160','ps_method':'referencia FIJA congelada (searchsorted)','ps_thr_raw':{str(k):round(v,5) for k,v in PS_THR.items()},'n_trades':int(len(sub)),
                  'n_days':int(sub['dia'].dt.date.nunique()),'date_min':sub['dia'].min().strftime('%Y-%m-%d'),
                  'date_max':sub['dia'].max().strftime('%Y-%m-%d')},
         'baseline': {'n_trades':len(sub),'n_days':int(sub['dia'].dt.date.nunique()),
@@ -199,7 +240,11 @@ dpsf = stt_heal.heal(dpsf, PARQUET_DIR, log=lambda m: print('    '+m, flush=True
 dpsf['ivc_proxy_raw'] = (dpsf['iv_5d']+dpsf['iv_30d'])/2 - dpsf['iv_15d']
 dpsf['ivc_d'] = expanding_pct(smooth3(dpsf['ivc_proxy_raw'].values))
 dpsf['atm_d'] = expanding_pct(smooth3(dpsf['iv_50d'].values))
-dpsf['ps_d']  = expanding_pct(smooth3(dpsf['skew_25d_vs50'].values))
+# PUT SKEW: MISMA referencia FIJA que las tablas (searchsorted, no expanding).
+# Asi el panel y las tablas usan exactamente la misma definicion.
+_ps_raw_d = smooth3(dpsf['skew_25d_vs50'].values)
+dpsf['ps_d'] = np.where(np.isnan(_ps_raw_d), np.nan,
+                        np.searchsorted(PS_REF, _ps_raw_d, side='right') / float(len(PS_REF)) * 100.0)
 # SQI_V2 PROXY diario (trade-level score aproximado con datos de mercado):
 #   comp1 proxy = iv_25d @160 (rho +0.910 con THETA_OVER_SPOT diario)
 #   comp3 proxy = ivc_proxy (rho +0.844). Proxy total: rho +0.848 con SQI_V2 trade,
@@ -216,7 +261,16 @@ data['series'] = [{'t':r['dia'].strftime('%Y-%m-%d'),'ivc':round(float(r['ivc_d'
                    'sqi':round(float(r['sqi_d']),2),
                    'spx':(round(float(r['spx_close']),2) if pd.notna(r['spx_close']) else None)} for _,r in dser.iterrows()]
 _last = dser.iloc[-1]
+
+def _last_fav(frame, col):
+    """Ultima fecha en que la senal marco FAVORABLE (>=80). Una luz que lleva anios
+    sin encenderse es indistinguible de una que hoy esta en rojo: esto lo hace visible."""
+    f = frame[frame[col] >= 80]
+    return f.iloc[-1]['dia'].strftime('%Y-%m-%d') if len(f) else None
+
 data['latest'] = {'date':_last['dia'].strftime('%Y-%m-%d'),
+    'last_fav_ivc':_last_fav(dser,'ivc_d'), 'last_fav_vix':_last_fav(dser,'atm_d'),
+    'last_fav_ps':_last_fav(dser,'ps_d'),   'last_fav_sqi':_last_fav(dser,'sqi_d'),
     'ivc_pct':float(_last['ivc_d']),'regime_ivc':banda(_last['ivc_d']),
     'vix_pct':float(_last['atm_d']),'regime_vix':banda(_last['atm_d']),
     'ps_pct':float(_last['ps_d']),'regime_ps':banda(_last['ps_d']),

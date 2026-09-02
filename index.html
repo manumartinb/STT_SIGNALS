@@ -18,6 +18,8 @@ h1 { font-size:18px; margin:0; font-weight:600; }
 .latest .label { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; }
 .latest .mini { font-size:11px; color:var(--muted); margin-top:3px; }
 .latest .hint { font-size:10.5px; color:#3fb950; margin-top:3px; font-weight:600; }
+.latest .stale { font-size:10px; color:#8b949e; margin-top:4px; border-top:1px solid var(--border); padding-top:4px; }
+.latest .stale.old { color:#d29922; }
 .regime { display:inline-block; padding:2px 9px; border-radius:12px; font-size:11px; font-weight:600; margin-left:6px; vertical-align:middle; }
 .regime.FAVORABLE { background:rgba(26,127,55,0.20); color:#3fb950; }
 .regime.NEUTRAL { background:rgba(154,103,0,0.20); color:#d29922; }
@@ -41,6 +43,8 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
 .ev-table tbody tr:hover { background:rgba(88,166,255,0.06); }
 .ev-table th:first-child, .ev-table td:first-child { text-align:left; }
 .ev-table .raw-row td { font-weight:600; background:rgba(255,255,255,0.025); }
+.ev-table .byyear { font-size:10px; color:#6e7681; font-weight:400; margin-top:2px; letter-spacing:0.2px; }
+.ev-table .byyear.conc { color:#d29922; }
 .ev-table.dual { font-size:11.5px; }
 .ev-table.dual th, .ev-table.dual td { padding:5px 7px; }
 .ev-table.dual thead th { text-align:center; }
@@ -70,7 +74,7 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
 <div class="header">
   <div>
     <h1>STT SIGNALS - IV_CONV / IV ATM / PUT SKEW / SQI_V2</h1>
-    <div class="subtitle">3 senales de regimen + 1 score de calidad trade-level (SQI_V2 proxy) sobre STT (PUT BWB +K1 -2K2 +K3, DTE 150-170) - percentil expanding ex-ante</div>
+    <div class="subtitle">3 senales de regimen de mercado + 1 score de calidad (SQI_V2 proxy) sobre STT (PUT BWB +K1 -2K2 +K3, DTE 150-170) - escala 0-100 ex-ante</div>
   </div>
   <div class="latest-group">
     <div class="latest">
@@ -78,24 +82,28 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
       <div><span class="v" id="ld-ivc">--</span><span class="regime" id="lr-ivc">--</span></div>
       <div class="mini">raw: <span id="ld-ivcraw">--</span>%</div>
       <div class="hint">&uarr; mas alto = mejor (FAV &ge;80)</div>
+      <div class="stale" id="lf-ivc"></div>
     </div>
     <div class="latest">
       <div class="label">IV ATM pct</div>
       <div><span class="v" id="ld-vix">--</span><span class="regime" id="lr-vix">--</span></div>
       <div class="mini">IV ATM: <span id="ld-vixraw">--</span></div>
       <div class="hint">&uarr; mas alto = mejor (FAV &ge;80)</div>
+      <div class="stale" id="lf-vix"></div>
     </div>
     <div class="latest">
       <div class="label">PUT SKEW pct</div>
       <div><span class="v" id="ld-ps">--</span><span class="regime" id="lr-ps">--</span></div>
       <div class="mini">skew_25d_vs50 @dte160</div>
       <div class="hint">&uarr; mas alto = mejor (FAV &ge;80)</div>
+      <div class="stale" id="lf-ps"></div>
     </div>
     <div class="latest">
       <div class="label">SQI_V2 pct (calidad)</div>
       <div><span class="v" id="ld-sqi">--</span><span class="regime" id="lr-sqi">--</span></div>
       <div class="mini">0.57 theta/spot + 0.43 ivconv (proxy)</div>
       <div class="hint">&uarr; mas alto = mejor (FAV &ge;80)</div>
+      <div class="stale" id="lf-sqi"></div>
     </div>
   </div>
 </div>
@@ -103,18 +111,31 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
 <div id="chart" style="height:580px;"></div>
 
 <div class="note">
-  <strong>3 senales canonicas STT</strong>, todas como <strong>percentil expanding</strong> (0-100, sin lookahead):
-  <strong>IV_CONV</strong> = <code>(iv_k1+iv_k3)/2 - iv_k2</code> (concavidad de la PUT smile, Werner) rankeada sobre dias-trade STT &middot;
-  <strong>IV ATM</strong> = nivel IV ATM (iv_50d) @dte160 percentil expanding (eje vol, migrado desde VIX) &middot;
-  <strong>PUT SKEW NIVEL</strong> = <code>skew_25d_vs50_pct_expanding</code> @ dte160 (prima de cola en puts, 25d vs ATM) &middot;
-  <strong>SQI_V2</strong> = score de calidad TRADE-LEVEL <code>0.57*rank(theta/spot) + 0.43*rank(IV_CONV)</code>; en este chart va en version
-  <strong>proxy de mercado</strong> (comp1 via iv_25d@160, rho +0.91; proxy total rho +0.85 con el trade-level, r +0.43 vs PnL_d030 diario).
-  Version exacta y estudio completo: <code>SQI_V2_Formula_(STT).md</code> + Cohort Explorer own-stt.
+  <strong>3 senales canonicas STT</strong>, todas de <strong>mercado</strong> (@dte160, snapshot 10:30 ET), en escala 0-100 sin lookahead:
+  <strong>IV_CONV</strong> = <code>(iv_5d+iv_30d)/2 - iv_15d</code> (concavidad de la PUT smile, Werner), percentil <strong>expanding</strong> &middot;
+  <strong>IV ATM</strong> = nivel IV ATM <code>iv_50d</code>, percentil <strong>expanding</strong> (eje vol, migrado desde VIX) &middot;
+  <strong>PUT SKEW NIVEL</strong> = <code>skew_25d_vs50</code> (prima de cola en puts, 25d vs ATM) contra una
+  <strong>referencia historica FIJA</strong> (searchsorted, no expanding) &middot;
+  <strong>SQI_V2</strong> = score de calidad <code>0.57*rank(theta/spot) + 0.43*rank(IV_CONV)</code>, aqui en version
+  <strong>proxy de mercado</strong> (comp1 via iv_25d@160, rho +0.91; proxy total rho +0.85 con el trade-level).
   Bandas: <strong>FAVORABLE</strong> &ge;80, <strong>NEUTRAL</strong> 20-80, <strong>ADVERSO</strong> &le;20.
-  Universo del estudio: STT V9 2019-2025, las 3 senales presentes.
-  <br><strong>Grafico + panel superior = regimen DIARIO a hoy</strong> (ultima fecha de mercado disponible en SKEW_PUT_ENRICHED @dte160);
-  ahi IV_CONV es <strong>proxy de mercado</strong> <code>(iv_5d+iv_30d)/2 - iv_15d</code> (rho +0.84 con la trade-specific).
-  <strong>Tablas de abajo = backtest STT frozen</strong> (2019-2025, IV_CONV trade-specific). Por eso el panel y las tablas son de fechas distintas.
+  <br><strong>Una variable, una definicion</strong>: desde el 2026-09-02 el panel de arriba y las tablas de abajo usan
+  <strong>exactamente las mismas tres senales</strong>. Antes las tablas puntuaban IV_CONV con las IV de las patas del trade
+  (<code>(iv_k1+iv_k3)/2 - iv_k2</code>) y el panel usaba el proxy de mercado: coincidian solo el 78% de los dias en el umbral
+  P80, asi que la tabla prometia un resultado que la luz no seleccionaba igual. La version <em>trade-specific</em> no se ha
+  perdido: vive donde si existe un trade concreto -- la madre <code>STT_CLASSIC_V9_MERGED_T0_mediana.csv</code> y el scanner
+  LIVE, donde alimenta el score <code>SQI_V2</code>.
+  <br><strong>Suavizado</strong>: el RAW de las tres senales pasa por una <strong>mediana movil trailing de 3 dias</strong>
+  (ex-ante) antes de transformarse, para matar outliers de un dia en la fuente.
+  <br><strong>Por que PUT SKEW usa referencia fija</strong>: medido contra el PnL, el percentil <em>expanding</em> de esta senal
+  <strong>resta</strong> informacion respecto al valor crudo (el crudo gana +0.063 de Spearman, significativo por bootstrap por
+  dia). La referencia fija es la version del crudo en escala 0-100, asi que conserva su poder intacto. Umbrales equivalentes en
+  crudo: <span id="ps-thr">--</span>.
+  <br><strong>Lectura de las bandas</strong>: IV_CONV e IV ATM se miden contra <em>toda</em> la historia desde 2019, asi que el
+  liston lo fijaron 2020 y 2022 y la parte alta de la escala es cada vez mas dificil de alcanzar. Cada tarjeta indica
+  <strong>cuando marco FAVORABLE por ultima vez</strong>: si esa fecha es lejana, la senal no esta rota -- esta diciendo que no
+  estamos cerca de un extremo historico.
+  <br><strong>Panel = hoy; tablas = backtest congelado</strong> (STT V9, 2019-2025). Misma definicion, fechas distintas.
 </div>
 
 <div class="rules">
@@ -122,10 +143,18 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
   <div class="kpi-grid" id="kpi-baseline"></div>
   <h3>Como combinarlas</h3>
   <ul>
-    <li><strong>IVC + PUT SKEW es la mejor pareja</strong>: son las menos solapadas (rho ~+0.20). Cada una aporta info nueva. AND de ambas en TOP20 = setup de oro de par.</li>
-    <li><strong>IV ATM es el predictor mas fuerte en solitario</strong> (r~+0.45) pero se solapa con IVC (rho ~+0.49) y con PUT SKEW (rho ~+0.58): anade menos en combinacion.</li>
-    <li><strong>Triple AND</strong> (las 3 &ge;P80): cohorte mas selectiva, mayor WR, pero N pequeno. Ver seccion 3-a-3.</li>
-    <li><strong>EVITAR</strong> el HIERRO: las 3 (o pares) en BOT20 simultaneo - cohorte de no-entrada.</li>
+    <li><strong>IV ATM es el predictor mas fuerte en solitario</strong> (r ~+0.46) y <strong>PUT SKEW el segundo</strong>
+        (r ~+0.36), pero comparten mucha varianza entre si (rho ~+0.73): juntarlas anade menos de lo que parece.</li>
+    <li><strong>El par mas ortogonal es IVC x IV ATM</strong> (rho ~+0.29). Si se quiere diversificar de verdad, es esa la
+        pareja. <em>(Esta ficha decia antes que la mejor pareja era IVC x PUT SKEW; con la version generica de IV_CONV y la
+        referencia fija de PUT SKEW las correlaciones cambian y ese consejo ya no se sostiene.)</em></li>
+    <li><strong>Aviso sobre IV_CONV</strong>: en 2019 esta senal esta <strong>invertida</strong> (r -0.52 ese ano). Por eso sus
+        cohortes BOT son casi todas de 2019 y salen positivas. No es una senal de doble filo: es un ano en que falla.</li>
+    <li><strong>Triple AND</strong> (las 3 &ge;P80): N=37 trades, 25 de ellos de 2020. Es un detector de crisis, no un setup
+        recurrente. Tratarlo como curiosidad, no como regla.</li>
+    <li>El <strong>HIERRO</strong> (las 3 en BOT20 a la vez) no tiene muestra suficiente para ser una regla de no-entrada.</li>
+    <li><strong>Como leer todas las tablas</strong>: debajo de cada cohorte va su <strong>reparto por anio</strong>. Si un solo
+        anio pesa mas del 60% (marcado en ambar), esa cifra describe un regimen concreto, no una expectativa para manana.</li>
   </ul>
 </div>
 
@@ -171,13 +200,13 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
   <div class="ev-card"><div class="ev-tag">D &middot; Spearman</div><h2>Matriz de correlacion entre senales + poder predictivo</h2>
     <table class="corr-table" id="corr-matrix"></table>
     <div id="corr-pnl" style="font-size:13px;color:#b6bec9;line-height:1.7;margin-top:10px"></div>
-    <p style="margin-top:10px"><strong>Lectura</strong>: el par <strong>IVC x PUT SKEW</strong> es el de menor solapamiento - combinar ambas aporta diversificacion real. IV ATM, aunque mas predictivo solo, comparte mas varianza con las otras dos.</p>
+    <p style="margin-top:10px"><strong>Lectura</strong>: el par de menor solapamiento es <strong>IVC x IV ATM</strong>; <strong>IV ATM x PUT SKEW</strong> es el que mas comparte (ambas suben cuando sube la vol), asi que combinarlas diversifica poco.</p>
   </div>
 </section>
 
 <div class="footer">
   Universo: <span id="meta-universe">--</span> &middot; metrica PnL_d020/d030 (pts sobre net_credit) &middot;
-  IV ATM en percentil <span id="meta-vixmethod">expanding</span> &middot; regenera: update_dashboard.py
+  IV ATM/IV_CONV en percentil <span id="meta-vixmethod">expanding</span>, PUT SKEW vs referencia fija &middot; regenera: update_dashboard.py
 </div>
 
 <script>
@@ -192,9 +221,23 @@ fetch('data.json?v=' + Date.now()).then(r => r.json()).then(data => {
   document.getElementById('ld-ps').textContent = L.ps_pct.toFixed(1); setReg('lr-ps', L.regime_ps);
   if (L.sqi_pct !== undefined) { document.getElementById('ld-sqi').textContent = L.sqi_pct.toFixed(1); setReg('lr-sqi', L.regime_sqi); }
 
+  // Ultima vez FAVORABLE: una luz que lleva anios sin encenderse no puede parecer
+  // igual que una que hoy esta en rojo. Si hace >180 dias, se marca en ambar.
+  const today = new Date(L.date);
+  const setFav = (id, d) => {
+    const e = document.getElementById(id); if (!e) return;
+    if (!d) { e.textContent = 'nunca ha marcado FAVORABLE'; e.className = 'stale old'; return; }
+    const days = Math.round((today - new Date(d)) / 86400000);
+    e.textContent = (days <= 0) ? 'FAVORABLE hoy' : ('ultima FAV: ' + d + ' (' + days + 'd)');
+    e.className = 'stale' + (days > 180 ? ' old' : '');
+  };
+  setFav('lf-ivc', L.last_fav_ivc); setFav('lf-vix', L.last_fav_vix);
+  setFav('lf-ps', L.last_fav_ps);   setFav('lf-sqi', L.last_fav_sqi);
+
   document.getElementById('meta-universe').textContent =
     `STT V9 ${data.meta.date_min} - ${data.meta.date_max} | N=${data.meta.n_trades.toLocaleString()} + ${data.meta.n_days.toLocaleString()} dias`;
   document.getElementById('meta-vixmethod').textContent = data.stats.vix_method;
+  if (data.meta.ps_thr_raw) { var _t = data.meta.ps_thr_raw; document.getElementById('ps-thr').innerHTML = 'ADVERSO &le; <code>' + _t['20'] + '</code> &middot; FAVORABLE &ge; <code>' + _t['80'] + '</code>'; }
 
   const b = data.baseline;
   document.getElementById('kpi-baseline').innerHTML = `
@@ -219,13 +262,20 @@ fetch('data.json?v=' + Date.now()).then(r => r.json()).then(data => {
     const body = valid.map(r => {
       const isRaw = r.label.startsWith('RAW');
       const eM = r.avg_mean - base.mean, eMed = r.avg_med - base.med;
-      return `<tr class="${isRaw?'raw-row':''}"><td>${r.label}</td><td>${r.n}</td><td>${r.days}</td>
+      // Reparto por anio: una cohorte de N=27 con 26 trades de 2020 no es lo mismo que
+      // una repartida. Se muestra siempre, y en ambar si un solo anio pesa >=60%.
+      const by = r.by_year || {};
+      const yrs = Object.keys(by).sort();
+      const nmax = yrs.length ? Math.max(...yrs.map(y=>by[y])) : 0;
+      const conc = (!isRaw && r.n>0 && nmax/r.n >= 0.60);
+      const yTxt = yrs.map(y=>y.slice(2)+':'+by[y]).join(' ');
+      return `<tr class="${isRaw?'raw-row':''}"><td>${r.label}${yrs.length?`<div class="byyear${conc?' conc':''}">${yTxt}${conc?' &larr; '+Math.round(100*nmax/r.n)+'% en un anio':''}</div>`:''}</td><td>${r.n}</td><td>${r.days}</td>
         <td>${sg(r.d20_mean)}</td><td class="med-col">${sg(r.d20_med)}</td>
         <td>${sg(r.d30_mean)}</td><td class="med-col">${sg(r.d30_med)}</td>
         <td>${sg(r.avg_mean)}</td><td class="med-col">${sg(r.avg_med)}</td>
         <td><span class="${isRaw?'':cls(eM)}">${isRaw?'-':sg(eM)}</span></td>
         <td class="med-col"><span class="${isRaw?'':cls(eMed)}">${isRaw?'-':sg(eMed)}</span></td>
-        <td>${r.wr30.toFixed(1)}%</td><td>${r.pf30}</td></tr>`;
+        <td>${r.wr30.toFixed(1)}%</td><td>${r.pf30===999?'<span title="sin trades perdedores en la cohorte">inf</span>':(r.pf30>100?'&gt;100':r.pf30)}</td></tr>`;
     }).join('');
     document.getElementById(id).innerHTML = HEAD + '<tbody>' + body + '</tbody>';
   }
@@ -246,7 +296,7 @@ fetch('data.json?v=' + Date.now()).then(r => r.json()).then(data => {
     </tbody>`;
   document.getElementById('corr-pnl').innerHTML =
     `Spearman r vs PnL_d030: <strong>IVC ${s.r_ivc_pnl.toFixed(3)}</strong> &middot; <strong>IV ATM ${s.r_vix_pnl.toFixed(3)}</strong> &middot; <strong>PUT SKEW ${s.r_ps_pnl.toFixed(3)}</strong>. ` +
-    `Par menos correlacionado: IVC x PUT SKEW (rho ${s.corr_ivc_ps.toFixed(2)}).`;
+    (function(){var ps=[['IVC x IV ATM',s.corr_ivc_vix],['IVC x PUT SKEW',s.corr_ivc_ps],['IV ATM x PUT SKEW',s.corr_vix_ps]];ps.sort(function(a,b){return a[1]-b[1];});return 'Par menos correlacionado: <strong>'+ps[0][0]+'</strong> (rho '+ps[0][1].toFixed(2)+').';})();
 
   // Time series: 3 pct lines + IV ATM raw secondary
   const t = data.series.map(d=>d.t);

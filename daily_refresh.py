@@ -7,10 +7,12 @@ Refresca SOLO el grafico/panel vivo del dashboard STT_REGIME:
   - NO toca las tablas/deciles/stats (estudio backtest frozen) ni los PNGs.
   - git add data.json + commit + push origin main (SSH).
 
-Senales (percentil expanding 0-100, ex-ante; RAW suavizado mediana movil 3d antes de percentilizar):
-  IV_CONV  = smooth3((iv_5d+iv_30d)/2 - iv_15d) @dte160 (rho +0.84 con trade-specific)
-  IV ATM   = smooth3(iv_50d) @dte160
-  PUT SKEW = smooth3(skew_25d_vs50) @dte160 (recalc local del raw, homogeneo con IV ATM)
+Senales (escala 0-100, ex-ante; RAW suavizado mediana movil 3d antes de transformar):
+  IV_CONV  = smooth3((iv_5d+iv_30d)/2 - iv_15d) @dte160 -> percentil EXPANDING
+             (version generica de mercado; la trade-specific vive en la madre y en el LIVE)
+  IV ATM   = smooth3(iv_50d) @dte160                     -> percentil EXPANDING
+  PUT SKEW = smooth3(skew_25d_vs50) @dte160              -> searchsorted vs REFERENCIA FIJA
+             (PS_SKEW_REF_FROZEN.npz; cambio 2026-09-02 por @APR: el expanding RESTA)
 Secundario del chart: SPX close.
 
 Exit codes (compatibles con run_dashboard_generic de V2):
@@ -30,6 +32,7 @@ DATA = os.path.join(DIR, 'data.json')
 PS_PATH  = r'C:/Users/Administrator/Desktop/BULK OPTIONSTRAT/ESTRATEGIAS/Skew/SKEW_PUT_ENRICHED.csv'
 SPX_PATH = r'C:/Users/Administrator/Desktop/FINAL DATA/SP_SPX_CLOSE_HISTORICAL_PRICES.csv'
 PARQUET_DIR = r'C:/Users/Administrator/Desktop/FINAL DATA/HIST AND STREAMING DATA/UPDATED HISTORICAL DAYS PARQUET'
+PS_REF_NPZ  = os.path.join(DIR, 'PS_SKEW_REF_FROZEN.npz')  # referencia FIJA de PUT SKEW
 sys.path.insert(0, DIR)
 import stt_heal  # saneamiento dias glitch r=0 (autocontenido, no-op si no hay glitch)
 
@@ -57,6 +60,11 @@ def git(args):
 
 def main():
     try:
+        if not os.path.isfile(PS_REF_NPZ):
+            log('falta la referencia FIJA de PUT SKEW (%s) -> regenera con update_dashboard.py' % PS_REF_NPZ)
+            return 1
+        PS_REF = np.load(PS_REF_NPZ, allow_pickle=True)['ref_sorted']
+
         if not os.path.isfile(DATA):
             log(f"data.json no existe en {DIR} -> regenera primero con update_dashboard.py"); return 1
         data = json.load(open(DATA, encoding='utf-8'))
@@ -74,7 +82,13 @@ def main():
         ps['ivc_raw'] = (ps['iv_5d']+ps['iv_30d'])/2 - ps['iv_15d']
         ps['ivc_d'] = expanding_pct(smooth3(ps['ivc_raw'].values))
         ps['atm_d'] = expanding_pct(smooth3(ps['iv_50d'].values))
-        ps['ps_d']  = expanding_pct(smooth3(ps['skew_25d_vs50'].values))
+        # PUT SKEW: referencia FIJA congelada (searchsorted). Cambio 2026-09-02 tras
+        # el @APR: el percentil expanding RESTA sobre el raw (partial -0.128) y el raw
+        # gana +0.0631 SIG. El searchsorted contra referencia congelada es la version
+        # monotona del raw en escala 0-100. BLOQUE IDENTICO a update_dashboard.py.
+        _ps_raw = smooth3(ps['skew_25d_vs50'].values)
+        ps['ps_d'] = np.where(np.isnan(_ps_raw), np.nan,
+                              np.searchsorted(PS_REF, _ps_raw, side='right') / float(len(PS_REF)) * 100.0)
         # SQI_V2 PROXY (comp1=iv_25d rho+0.91; comp3=ivc_proxy). BLOQUE IDENTICO a update_dashboard.py.
         ps['sqi_d'] = 0.57*expanding_pct(smooth3(ps['iv_25d'].values)) + 0.43*ps['ivc_d']
 
@@ -91,7 +105,16 @@ def main():
                    'sqi':round(float(r['sqi_d']),2),
                    'spx':(round(float(r['spx']),2) if pd.notna(r['spx']) else None)} for _,r in dser.iterrows()]
         last = dser.iloc[-1]
+
+        def last_fav(col):
+            """Ultima fecha con FAVORABLE (>=80). BLOQUE IDENTICO a update_dashboard.py.
+            Hace visible que una luz lleve anios sin poder encenderse."""
+            f = dser[dser[col] >= 80]
+            return f.iloc[-1]['dia'].strftime('%Y-%m-%d') if len(f) else None
+
         latest = {'date':last['dia'].strftime('%Y-%m-%d'),
+                  'last_fav_ivc':last_fav('ivc_d'), 'last_fav_vix':last_fav('atm_d'),
+                  'last_fav_ps':last_fav('ps_d'),   'last_fav_sqi':last_fav('sqi_d'),
                   'ivc_pct':float(last['ivc_d']),'regime_ivc':banda(last['ivc_d']),
                   'vix_pct':float(last['atm_d']),'regime_vix':banda(last['atm_d']),
                   'ps_pct':float(last['ps_d']),'regime_ps':banda(last['ps_d']),
