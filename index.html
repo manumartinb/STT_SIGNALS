@@ -78,9 +78,9 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
   </div>
   <div class="latest-group">
     <div class="latest">
-      <div class="label">IV_CONV pct <span id="ld-date">--</span></div>
+      <div class="label">IV_CONV (mercado) pct <span id="ld-date">--</span></div>
       <div><span class="v" id="ld-ivc">--</span><span class="regime" id="lr-ivc">--</span></div>
-      <div class="mini">raw: <span id="ld-ivcraw">--</span>%</div>
+      <div class="mini">(iv_5d+iv_30d)/2-iv_15d = <span id="ld-ivcraw">--</span>%</div>
       <div class="hint">&uarr; mas alto = mejor (FAV &ge;80)</div>
       <div class="stale" id="lf-ivc"></div>
     </div>
@@ -124,7 +124,9 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
   (<code>(iv_k1+iv_k3)/2 - iv_k2</code>) y el panel usaba el proxy de mercado: coincidian solo el 78% de los dias en el umbral
   P80, asi que la tabla prometia un resultado que la luz no seleccionaba igual. La version <em>trade-specific</em> no se ha
   perdido: vive donde si existe un trade concreto -- la madre <code>STT_CLASSIC_V9_MERGED_T0_mediana.csv</code> y el scanner
-  LIVE, donde alimenta el score <code>SQI_V2</code>.
+  LIVE, donde alimenta el score <code>SQI_V2</code>. <strong>Ojo al nombre</strong>: aqui <code>IV_CONV</code> es siempre
+  el <strong>de mercado</strong>; en el Cohort Explorer (own-stt) el eje <code>IV_CONV</code> es el <strong>del trade</strong>.
+  Misma escala 0-100, variables distintas.
   <br><strong>Suavizado</strong>: el RAW de las tres senales pasa por una <strong>mediana movil trailing de 3 dias</strong>
   (ex-ante) antes de transformarse, para matar outliers de un dia en la fuente.
   <br><strong>Por que PUT SKEW usa referencia fija</strong>: medido contra el PnL, el percentil <em>expanding</em> de esta senal
@@ -160,7 +162,7 @@ section.evidence { max-width:1200px; margin:0 auto; display:flex; flex-direction
 
 <div class="section-title">Seccion A &middot; SENALES SOLAS (cortes percentil vs RAW)</div>
 <section class="evidence">
-  <div class="ev-card"><div class="ev-tag">A1 &middot; IV_CONV pct_expanding</div><h2>IV_CONV sola</h2>
+  <div class="ev-card"><div class="ev-tag">A1 &middot; IV_CONV (mercado) pct_expanding</div><h2>IV_CONV (mercado) sola</h2>
     <table class="ev-table dual" id="tbl-ivc"></table>
     <img src="evidence/traj_ivc.png" alt="trayectoria IVC" loading="lazy"></div>
   <div class="ev-card"><div class="ev-tag">A2 &middot; IV ATM pct_expanding</div><h2>IV ATM sola</h2>
