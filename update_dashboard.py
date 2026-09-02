@@ -1,8 +1,13 @@
 """
-Build STT REGIME dashboard (v4: IV_CONV / IV ATM [eje vol, ex-VIX] / PUT SKEW NIVEL)
-- 3 senales como percentil expanding 0-100 (ex-ante)
+Build STT REGIME dashboard (v5, 2026-09-02: todo generico + PUT SKEW a referencia fija)
+- 3 senales de MERCADO @dte160, RAW suavizado 3d (ex-ante), escala 0-100:
+    IV_CONV  = (iv_5d+iv_30d)/2 - iv_15d   -> percentil EXPANDING
+    IV ATM   = iv_50d                      -> percentil EXPANDING
+    PUT SKEW = skew_25d_vs50               -> searchsorted vs REFERENCIA FIJA congelada
+- Panel y tablas usan la MISMA definicion (antes las tablas usaban la IV_CONVEXITY
+  trade-specific de la madre; esa vive ahora solo en madre + LIVE, alimentando SQI_V2).
 - Estudios: solas, 2-a-2, 3-a-3. Todas las tablas/charts dual mean+median.
-- data.json + evidence/*.png
+- data.json + evidence/*.png. Ver el bloque CONFIG mas abajo para la justificacion.
 """
 import pandas as pd, numpy as np, sys, os, json
 from bisect import bisect_right, insort
@@ -16,7 +21,6 @@ EVDIR  = os.path.join(OUTDIR, 'evidence')
 os.makedirs(EVDIR, exist_ok=True)
 
 PATH = r'C:/Users/Administrator/Desktop/Backtests DATABASE/STT/STT_CLASSIC_V9_MERGED_T0_mediana.csv'
-VIX_PATH = r'C:/Users/Administrator/Desktop/FINAL DATA/VIX_CLOSE_HISTORICAL_PRICES.csv'
 PS_PATH  = r'C:/Users/Administrator/Desktop/BULK OPTIONSTRAT/ESTRATEGIAS/Skew/SKEW_PUT_ENRICHED.csv'
 # Parquets 30MIN crudos (solo lectura) para sanar dias glitch r=0 (ver stt_heal.py)
 PARQUET_DIR = r'C:/Users/Administrator/Desktop/FINAL DATA/HIST AND STREAMING DATA/UPDATED HISTORICAL DAYS PARQUET'
