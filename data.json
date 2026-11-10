@@ -1,20 +1,20 @@
 {
   "latest": {
-    "date": "2026-11-09",
-    "last_fav_ivc": "2026-11-09",
+    "date": "2026-11-10",
+    "last_fav_ivc": "2026-11-10",
     "last_fav_vix": "2025-04-23",
     "last_fav_ps": "2025-04-11",
     "last_fav_sqi": "2026-04-02",
-    "ivc_pct": 92.36216489630753,
+    "ivc_pct": 90.59656218402426,
     "regime_ivc": "FAVORABLE",
-    "vix_pct": 56.9549822964087,
+    "vix_pct": 52.62891809908999,
     "regime_vix": "NEUTRAL",
-    "ps_pct": 62.415759460860556,
+    "ps_pct": 52.15137376879212,
     "regime_ps": "NEUTRAL",
-    "sqi_pct": 70.5078401618614,
+    "sqi_pct": 67.65824064711829,
     "regime_sqi": "NEUTRAL",
-    "vix_raw": 0.1637584610762997,
-    "ivc_raw": 0.021270333892619814
+    "vix_raw": 0.1592953815141584,
+    "ivc_raw": 0.02059000527040647
   },
   "series": [
     {
@@ -15599,6 +15599,14 @@
       "vix": 56.95,
       "ps": 62.42,
       "sqi": 70.51,
+      "spx": 7510.48
+    },
+    {
+      "t": "2026-11-10",
+      "ivc": 90.6,
+      "vix": 52.63,
+      "ps": 52.15,
+      "sqi": 67.66,
       "spx": null
     }
   ],
@@ -15618,8 +15626,8 @@
     "n_days": 1226,
     "date_min": "2019-02-14",
     "date_max": "2025-10-01",
-    "chart_date_max": "2026-11-09",
-    "chart_n_days": 1948
+    "chart_date_max": "2026-11-10",
+    "chart_n_days": 1949
   },
   "baseline": {
     "n_trades": 1633,
